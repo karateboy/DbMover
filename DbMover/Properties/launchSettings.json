@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DbMover": {
+      "commandName": "Project",
+      "commandLineArgs": "localhost localhost karateboy 19751025bank"
+    }
+  }
+}
