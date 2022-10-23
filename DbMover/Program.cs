@@ -16,7 +16,9 @@ remoteBuilder["Server"] = cliArgs[2];
 remoteBuilder["User"] = cliArgs[3];
 remoteBuilder["Password"] = cliArgs[4];
 Console.WriteLine(remoteBuilder.ConnectionString);
-
+int backPort = 0;
+if(cliArgs.Length > 5)
+    backPort = int.Parse(cliArgs[5]);
 
 Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()                
@@ -25,9 +27,17 @@ Log.Logger = new LoggerConfiguration()
                 .CreateLogger();
 
 Console.WriteLine("Start grab exhibition db");
-var task = new BackgroundTask(localBuilder.ConnectionString, remoteBuilder.ConnectionString, TimeSpan.FromHours(1));
-await task.Start();
-while (Console.ReadLine() != "exit");
-await task.StopAsync();
+var dbTask = new DbTask(localBuilder.ConnectionString, remoteBuilder.ConnectionString);
 
+if(backPort > 0)
+{
+    List<Task> taskList = new();
+    for (int i = -backPort; i <= -1; i++)
+    {
+        taskList.Add(dbTask.GrabRemoteDbAt(DateTime.Now.AddDays(i)));
+    }
+    await Task.WhenAll(taskList);
+}
 
+await dbTask.GrabRemoteDbAt(DateTime.Now.AddDays(-1));
+Log.Information("Move remote DB complete");
