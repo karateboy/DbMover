@@ -46,19 +46,21 @@ internal class DbTask
                 if (!pointTimeValueMap.ContainsKey(point))
                     pointTimeValueMap[point] = new();
 
-                pointTimeValueMap[point][dt.AddHours(8)]=value;
+                pointTimeValueMap[point][dt.AddHours(8)] = value;
             }
+
             IEnumerable<List<(DateTime, float)>> pointGeneratingEnumerator = pointTimeValueMap.Select(kvp =>
             {
-                List<(DateTime dt, float Value)> totalList = kvp.Value.Select(kvp=>(kvp.Key, kvp.Value)).OrderByDescending(t=>t.Key).ToList();
-                
+                List<(DateTime dt, float Value)> totalList = kvp.Value.Select(kvp => (kvp.Key, kvp.Value))
+                    .OrderByDescending(t => t.Key).ToList();
+
                 List<(DateTime, float)> generatingList = new();
                 while (totalList.Count >= 2)
                 {
                     (DateTime dt, float Value) endRecord = totalList[0];
                     (DateTime dt, float Value) startRecord = totalList[1];
-                    
-                    if(startRecord.dt.Hour <= 5 || startRecord.dt.Hour >= 19)
+
+                    if (startRecord.dt.Hour <= 5 || startRecord.dt.Hour >= 19)
                     {
                         generatingList.Add((startRecord.dt, 0));
                     }
@@ -70,9 +72,10 @@ internal class DbTask
 
                         generatingList.Add((startRecord.dt, Math.Abs(generatedKW)));
                     }
-                                            
+
                     totalList.RemoveAt(0);
                 }
+
                 return generatingList;
             });
             Dictionary<DateTime, float> totalGeneratingMap = new();
@@ -86,6 +89,7 @@ internal class DbTask
                     totalGeneratingMap[generating.Item1] += generating.Item2;
                 }
             }
+
             return totalGeneratingMap;
         }
     }
@@ -112,10 +116,11 @@ internal class DbTask
                 float value = (float)reader["ActualValue"];
                 consumingMap[dt.AddHours(8)] = value;
             }
+
             return consumingMap;
         }
     }
-    
+
     async Task<int> UpsertMinRecord(DateTime dt, double generating, double consuming)
     {
         string queryStr = @"
@@ -137,8 +142,8 @@ internal class DbTask
         using (SqlConnection connection = new SqlConnection(localConnectionStr))
         {
             SqlCommand command = new SqlCommand(queryStr, connection);
-            command.Parameters.AddWithValue("generating", generating>2000? 2000: generating);
-            command.Parameters.AddWithValue("consuming", consuming>3382? 3382: consuming);
+            command.Parameters.AddWithValue("generating", generating > 2000 ? 2000 : generating);
+            command.Parameters.AddWithValue("consuming", consuming > 3382 ? 3382 : consuming);
             command.Parameters.AddWithValue("dt", dt);
             command.Connection.Open();
             return await command.ExecuteNonQueryAsync();
@@ -161,13 +166,14 @@ internal class DbTask
                     ([MonitorID], [DateTime], [generating], [storing], [consuming])
                     VALUES
                     (3, @dt, @generating, null,@consuming)
-                END"; ;
+                END";
+        ;
 
         using (SqlConnection connection = new SqlConnection(localConnectionStr))
         {
             SqlCommand command = new SqlCommand(queryStr, connection);
-            command.Parameters.AddWithValue("generating", generating);
-            command.Parameters.AddWithValue("consuming", consuming);
+            command.Parameters.AddWithValue("generating", generating > 2000 ? 2000 : generating);
+            command.Parameters.AddWithValue("consuming", consuming > 3382 ? 3382 : consuming);
             command.Parameters.AddWithValue("dt", dt);
             command.Connection.Open();
             return await command.ExecuteNonQueryAsync();
@@ -182,26 +188,30 @@ internal class DbTask
                 .AddSeconds(-now.Second).AddMilliseconds(-now.Millisecond);
             var generatingMap = await GetGenerating(start);
             var consumingMap = await GetConsuming(start);
+            Log.Information("Get data complete generating: {0} consuming: {1}", generatingMap.Count,
+                consumingMap.Count);
+
             List<(DateTime, float, float)> updateList = new();
             foreach (var dt in generatingMap.Keys)
             {
-                if (!consumingMap.ContainsKey(dt))
-                    continue;
-
-                updateList.Add((dt, generatingMap[dt], consumingMap[dt]));
+                var generating = generatingMap[dt] > 2000 ? 2000 : generatingMap[dt];
+                var consuming = consumingMap.TryGetValue(dt, out var value) ? value > 3328 ? 3328 : 0 : 0;
+                updateList.Add((dt, generating, consuming));
             }
+
             updateList.Sort((a, b) => a.Item1.CompareTo(b.Item1));
-            if(updateList.Count > 0)
+            if (updateList.Count > 0)
             {
                 foreach (var update in updateList)
                 {
                     await UpsertMinRecord(update.Item1, update.Item2, update.Item3);
                 }
+
                 var minDt = updateList.First();
                 var maxDt = updateList.Last();
 
                 Log.Information($"{minDt.Item1:g} => {maxDt.Item1:g}: total {updateList.Count} min upserted");
-                for(int i = 0; i < 24; i++)
+                for (int i = 0; i < 24; i++)
                 {
                     DateTime hourStart = start.AddHours(i);
                     DateTime hourEnd = hourStart.AddHours(1);
@@ -209,7 +219,7 @@ internal class DbTask
                         continue;
 
                     var hourList = updateList.Where(t => t.Item1 >= hourStart && t.Item1 < hourEnd).ToList();
-                    if(hourList.Count > 0)
+                    if (hourList.Count > 0)
                     {
                         double generatingAvg = hourList.Select(t => t.Item2).Average();
                         double consumingAvg = hourList.Select(t => t.Item3).Average();
@@ -220,13 +230,15 @@ internal class DbTask
                         await UpsertHourRecord(hourStart, 0, 0);
                     }
                 }
+
                 Log.Information($"{start:g} hourRecord upserted");
-            }            
+            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "failed");
         }
+
         return;
     }
 
