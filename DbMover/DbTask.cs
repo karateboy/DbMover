@@ -195,7 +195,8 @@ internal class DbTask
             foreach (var dt in generatingMap.Keys)
             {
                 var generating = generatingMap[dt] > 2000 ? 2000 : generatingMap[dt];
-                var consuming = consumingMap.TryGetValue(dt, out var value) ? value > 3328 ? 3328 : 0 : 0;
+                var consuming = consumingMap.TryGetValue(dt, out var value) ? 
+                    (value > 3328 ? 3328 : value) : 0;
                 updateList.Add((dt, generating, consuming));
             }
 
